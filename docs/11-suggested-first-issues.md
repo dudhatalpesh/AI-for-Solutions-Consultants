@@ -1,6 +1,6 @@
 # 11 — Suggested First 15 GitHub Issues
 
-A backlog to build this repo out incrementally. **These are not yet created on GitHub.** Create them when you are ready (see the command at the end).
+A backlog to build this repo out incrementally. **These now exist on GitHub as [issues #1–#15](https://github.com/dudhatalpesh/AI-for-Solutions-Consultants/issues)**, with the same numbers as below.
 
 Labels used: `content`, `lab`, `n8n-workflow`, `python`, `security`, `template`, `infra`, `good first issue`.
 
@@ -71,12 +71,12 @@ Labels used: `content`, `lab`, `n8n-workflow`, `python`, `security`, `template`,
 ### 15. Modules 11–13, capstone rubric, CI anchors
 - **Acceptance:** modules complete; capstone scoring rubric; `scripts/validate_repo.py` also checks heading anchors.
 
-## Creating these on GitHub
+## Creating more issues like these
 
-After you approve, they can be created with the GitHub CLI, for example:
+Use the GitHub CLI, for example:
 
 ```bash
 gh issue create --repo dudhatalpesh/AI-for-Solutions-Consultants --title "Smoke-test docker-compose stack on Windows, macOS and Linux" --label infra --body "See docs/11-suggested-first-issues.md#1-smoke-test-docker-compose-stack-on-windows-macos-and-linux"
 ```
 
-Labels must exist first (`gh label create infra`, etc.).
+The labels already exist on the repo.
