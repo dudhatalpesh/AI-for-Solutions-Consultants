@@ -1,0 +1,45 @@
+name: n8n workflow update
+description: Propose a fix or change to a workflow JSON in n8n-workflows/ or a lab folder.
+title: "[Workflow NN] <short description>"
+labels: ["n8n-workflow"]
+body:
+  - type: input
+    id: workflow
+    attributes:
+      label: Workflow file
+      placeholder: "e.g. n8n-workflows/03-rag-workflow.json"
+    validations:
+      required: true
+  - type: input
+    id: n8n_version
+    attributes:
+      label: n8n version tested
+      placeholder: "e.g. 2.44.6"
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What changes and why
+      description: Node names, parameters, typeVersions, connections.
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: Test evidence
+      description: Sample input, expected and actual output, execution screenshot (no secrets).
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Export hygiene
+      options:
+        - label: Credentials blocks and IDs removed
+          required: true
+        - label: pinData cleared; no real or personal data
+          required: true
+        - label: n8n-workflows/README.md updated (inputs, outputs, credentials)
+        - label: make validate passes
+        - label: Reviewed against templates/n8n-workflow-design-review-checklist.md

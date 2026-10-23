@@ -1,0 +1,32 @@
+# Secrets and local config — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# Local runtime data (Docker bind mount used by n8n for files)
+shared/*
+!shared/README.md
+backups/
+*.log
+
+# Exported n8n data that may contain credentials or execution data
+n8n-export/
+executions/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

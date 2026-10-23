@@ -1,0 +1,58 @@
+name: Lab issue
+description: Report a problem running a lab (setup, workflow, script or instructions).
+title: "[Lab NN] <short description>"
+labels: ["lab", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove secrets, tokens, customer data and personal data from logs and screenshots before posting.
+  - type: input
+    id: lab
+    attributes:
+      label: Lab
+      placeholder: "e.g. Lab 04 - RAG knowledge assistant"
+    validations:
+      required: true
+  - type: input
+    id: step
+    attributes:
+      label: Step / node where it failed
+      placeholder: "e.g. Part B step 5, node 'Qdrant Insert'"
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour and error text
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: n8n_version
+    attributes:
+      label: n8n version
+      placeholder: "e.g. 2.44.6"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS (Apple Silicon), macOS (Intel), Linux, WSL]
+  - type: input
+    id: model
+    attributes:
+      label: Model(s) used
+      placeholder: "e.g. llama3.2, nomic-embed-text"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks done
+      options:
+        - label: I checked the lab's "Common errors and fixes" section
+        - label: I checked docs/08-troubleshooting-guide.md
+        - label: I removed secrets and personal data from this issue
+          required: true

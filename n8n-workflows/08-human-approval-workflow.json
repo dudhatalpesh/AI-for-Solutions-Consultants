@@ -1,0 +1,255 @@
+{
+  "name": "Lab 09 - Human-in-the-Loop Approval (policy check, email approval, wait, audit)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Lab 09 - Human-in-the-loop approval\n`POST /webhook/lab09-request {\"request_id\":\"REQ-1001\",\"action\":\"issue_service_credit\",\"account_id\":\"ACME-001\",\"amount\":250,\"requested_by\":\"agent:lab07\",\"reason\":\"VPN outage\"}`\n\n- Invalid action/amount -> 400, audited as rejected.\n- Amount <= auto-approve limit -> executes (mock) and audits `auto_approved`.\n- Above limit -> 202 now, approval email (Mailpit) with resume URL, **Wait** up to 1 h -> approve / reject / timeout -> audit.\n\nCredentials: **Postgres (lab)**, **SMTP (Mailpit)**.",
+        "height": 360,
+        "width": 460
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-760, -340]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lab09-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000002",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-220, 100],
+      "webhookId": "0b1a0008-0000-4000-8000-0000000000a1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "c1", "name": "auto_approve_limit_usd", "value": 100, "type": "number" },
+            { "id": "c2", "name": "hard_cap_usd", "value": 10000, "type": "number" },
+            { "id": "c3", "name": "allowed_actions", "value": "issue_service_credit,extend_trial", "type": "string" },
+            { "id": "c4", "name": "approver_email", "value": "approver@example.test", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000003",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-20, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deterministic policy check - the model never decides whether it is allowed to act.\nconst cfg = $('Config').first().json;\nconst b = $('Webhook').first().json.body || {};\nconst allowed = cfg.allowed_actions.split(',').map(s => s.trim());\nconst amount = Number(b.amount);\nconst reasons = [];\nif (!b.request_id) reasons.push('missing request_id');\nif (!allowed.includes(b.action)) reasons.push('action not allowed');\nif (!(amount > 0)) reasons.push('amount must be positive');\nif (amount > cfg.hard_cap_usd) reasons.push('amount exceeds hard cap');\nlet decision = 'needs_approval';\nif (reasons.length) decision = 'invalid';\nelse if (amount <= cfg.auto_approve_limit_usd) decision = 'auto';\nreturn [{ json: {\n  request_id: String(b.request_id || 'unknown').slice(0, 64),\n  action: String(b.action || '').slice(0, 64),\n  account_id: String(b.account_id || '').slice(0, 32),\n  amount,\n  requested_by: String(b.requested_by || 'unknown').slice(0, 64),\n  reason: String(b.reason || '').slice(0, 300),\n  decision, reasons\n} }];"
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000004",
+      "name": "Policy Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [180, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "v1", "leftValue": "={{ $json.decision }}", "rightValue": "invalid", "operator": { "type": "string", "operation": "notEquals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000005",
+      "name": "Valid Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [380, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ request_id: $json.request_id, status: 'rejected', reasons: $json.reasons }) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000006",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [600, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "n1", "leftValue": "={{ $json.decision }}", "rightValue": "needs_approval", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000007",
+      "name": "Needs Approval?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [600, 60]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ request_id: $json.request_id, status: 'pending_approval', message: 'An approver has been notified.' }) }}",
+        "options": { "responseCode": 202 }
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000008",
+      "name": "Respond 202 Pending",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, -60]
+    },
+    {
+      "parameters": {
+        "fromEmail": "ai-lab@example.test",
+        "toEmail": "={{ $('Config').first().json.approver_email }}",
+        "subject": "=Approval needed: {{ $('Policy Check').first().json.action }} {{ $('Policy Check').first().json.amount }} USD ({{ $('Policy Check').first().json.request_id }})",
+        "emailFormat": "text",
+        "text": "=Request: {{ $('Policy Check').first().json.request_id }}\nAction: {{ $('Policy Check').first().json.action }}\nAccount: {{ $('Policy Check').first().json.account_id }}\nAmount: {{ $('Policy Check').first().json.amount }} USD\nRequested by: {{ $('Policy Check').first().json.requested_by }}\nReason: {{ $('Policy Check').first().json.reason }}\n\nApprove:\ncurl -X POST \"{{ $execution.resumeUrl }}\" -H \"Content-Type: application/json\" -d '{\"decision\":\"approve\",\"approver\":\"your.name\",\"notes\":\"ok\"}'\n\nReject:\ncurl -X POST \"{{ $execution.resumeUrl }}\" -H \"Content-Type: application/json\" -d '{\"decision\":\"reject\",\"approver\":\"your.name\",\"notes\":\"reason\"}'\n\nThis request expires in 1 hour.",
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000009",
+      "name": "Send Approval Request",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1040, -60]
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 1,
+        "resumeUnit": "hours",
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000010",
+      "name": "Wait for Decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1260, -60],
+      "webhookId": "0b1a0008-0000-4000-8000-0000000000a2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise the approver's response. No body = the wait timed out.\nconst req = $('Policy Check').first().json;\nconst body = $input.first().json.body;\nlet decision = 'timed_out';\nif (body && body.decision === 'approve') decision = 'approved';\nelse if (body && body.decision === 'reject') decision = 'rejected';\nreturn [{ json: { ...req, decision, decided_by: body ? String(body.approver || 'unknown').slice(0, 64) : 'system', notes: body ? String(body.notes || '').slice(0, 300) : 'no response within time limit' } }];"
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000011",
+      "name": "Normalise Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, -60]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "p1", "leftValue": "={{ $json.decision }}", "rightValue": "approved", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000012",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1700, -60]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ request_id: $json.request_id, status: 'auto_approved' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000013",
+      "name": "Respond 200 Auto",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "// MOCK action. In production this would call the billing system with a narrowly scoped credential.\nreturn $input.all().map(i => ({ json: { ...i.json, decision: i.json.decision === 'auto' ? 'auto_approved' : i.json.decision, decided_by: i.json.decided_by || 'policy', notes: i.json.notes || 'within auto-approve limit', executed: true, executed_at: new Date().toISOString() } }));"
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000014",
+      "name": "Execute Action (mock)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1920, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lab.approval_audit (request_id, action, requested_by, decision, decided_by, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.request_id, $json.action, $json.requested_by, $json.decision, $json.decided_by, $json.notes ] }}"
+        }
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000015",
+      "name": "Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2140, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Invalid requests are audited too.\nreturn $input.all().map(i => ({ json: { ...i.json, decision: 'rejected', decided_by: 'policy', notes: (i.json.reasons || []).join('; ') } }));"
+      },
+      "id": "0b1a0008-0000-4000-8000-000000000016",
+      "name": "Prepare Invalid Audit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 320]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Policy Check", "type": "main", "index": 0 }]] },
+    "Policy Check": { "main": [[{ "node": "Valid Request?", "type": "main", "index": 0 }]] },
+    "Valid Request?": {
+      "main": [
+        [{ "node": "Needs Approval?", "type": "main", "index": 0 }],
+        [{ "node": "Respond 400", "type": "main", "index": 0 }]
+      ]
+    },
+    "Respond 400": { "main": [[{ "node": "Prepare Invalid Audit", "type": "main", "index": 0 }]] },
+    "Prepare Invalid Audit": { "main": [[{ "node": "Audit Log", "type": "main", "index": 0 }]] },
+    "Needs Approval?": {
+      "main": [
+        [{ "node": "Respond 202 Pending", "type": "main", "index": 0 }],
+        [{ "node": "Respond 200 Auto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Respond 202 Pending": { "main": [[{ "node": "Send Approval Request", "type": "main", "index": 0 }]] },
+    "Send Approval Request": { "main": [[{ "node": "Wait for Decision", "type": "main", "index": 0 }]] },
+    "Wait for Decision": { "main": [[{ "node": "Normalise Decision", "type": "main", "index": 0 }]] },
+    "Normalise Decision": { "main": [[{ "node": "Approved?", "type": "main", "index": 0 }]] },
+    "Approved?": {
+      "main": [
+        [{ "node": "Execute Action (mock)", "type": "main", "index": 0 }],
+        [{ "node": "Audit Log", "type": "main", "index": 0 }]
+      ]
+    },
+    "Respond 200 Auto": { "main": [[{ "node": "Execute Action (mock)", "type": "main", "index": 0 }]] },
+    "Execute Action (mock)": { "main": [[{ "node": "Audit Log", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,200 @@
+{
+  "name": "Lab 12 - AI Observability (LLM call logging, hourly metrics + alerts, error workflow)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Lab 12 - AI observability\n**A. Log ingestion:** other workflows `POST /webhook/ai-log` (Header Auth) with `{workflow, execution_id, model, prompt_tokens, completion_tokens, latency_ms, status, user_feedback}` -> cost estimate -> `lab.llm_calls`.\n\n**B. Hourly metrics:** Schedule -> SQL aggregates (calls, error rate, p95 latency, tokens, cost) -> thresholds -> alert email (Mailpit).\n\n**C. Error workflow:** set this workflow as the **Error Workflow** in other workflows' settings. Error Trigger -> `lab.workflow_errors` -> alert email.\n\nCredentials: **Header Auth (lab)**, **Postgres (lab)**, **SMTP (Mailpit)**.",
+        "height": 380,
+        "width": 480
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-800, -360]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-log",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000002",
+      "name": "Log Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-240, 0],
+      "webhookId": "0b1a0010-0000-4000-8000-0000000000a1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "p1", "name": "price_per_1k_tokens_json", "value": "{\"llama3.2\":{\"in\":0,\"out\":0},\"nomic-embed-text\":{\"in\":0,\"out\":0},\"example-cloud-model\":{\"in\":0.001,\"out\":0.002}}", "type": "string" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000003",
+      "name": "Pricing Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-40, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise a telemetry event and estimate cost.\n// Prices in Pricing Config are PLACEHOLDERS. Local models = 0 marginal token cost. Use your provider's current price list.\nconst prices = JSON.parse($input.first().json.price_per_1k_tokens_json);\nconst b = $input.first().json.body || {};\nconst model = String(b.model || 'unknown').slice(0, 64);\nconst pin = Math.max(0, parseInt(b.prompt_tokens, 10) || 0);\nconst pout = Math.max(0, parseInt(b.completion_tokens, 10) || 0);\nconst p = prices[model] || { in: 0, out: 0 };\nconst cost = (pin / 1000) * p.in + (pout / 1000) * p.out;\nconst fb = [1, -1, 0].includes(Number(b.user_feedback)) ? Number(b.user_feedback) : null;\nreturn [{ json: {\n  workflow: String(b.workflow || 'unknown').slice(0, 128),\n  execution_id: String(b.execution_id || '').slice(0, 64),\n  model, prompt_tokens: pin, completion_tokens: pout,\n  latency_ms: Math.max(0, parseInt(b.latency_ms, 10) || 0),\n  est_cost_usd: Math.round(cost * 1e6) / 1e6,\n  status: ['ok', 'error', 'blocked'].includes(b.status) ? b.status : 'ok',\n  user_feedback: fb\n} }];"
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000004",
+      "name": "Normalise & Cost",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lab.llm_calls (workflow, execution_id, model, prompt_tokens, completion_tokens, latency_ms, est_cost_usd, status, user_feedback) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.workflow, $json.execution_id, $json.model, $json.prompt_tokens, $json.completion_tokens, $json.latency_ms, $json.est_cost_usd, $json.status, $json.user_feedback ] }}"
+        }
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000005",
+      "name": "Insert LLM Call",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [360, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ logged: true, id: $json.id }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000006",
+      "name": "Respond Logged",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] }
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000007",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  count(*)::int AS calls,\n  COALESCE(round(avg(CASE WHEN status <> 'ok' THEN 1 ELSE 0 END)::numeric, 3), 0) AS error_rate,\n  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0)::int AS p95_latency_ms,\n  COALESCE(sum(prompt_tokens + completion_tokens), 0)::int AS total_tokens,\n  COALESCE(sum(est_cost_usd), 0)::numeric(12,4) AS est_cost_usd,\n  COALESCE(round(avg(user_feedback)::numeric, 2), 0) AS avg_feedback\nFROM lab.llm_calls\nWHERE logged_at > now() - interval '1 hour';",
+        "options": {}
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000008",
+      "name": "Hourly Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-20, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Thresholds - agree these with the customer as part of POC success criteria.\nconst t = { max_error_rate: 0.05, max_p95_latency_ms: 15000, max_hourly_cost_usd: 5 };\nconst m = $input.first().json;\nconst breaches = [];\nif (Number(m.error_rate) > t.max_error_rate) breaches.push(`error rate ${m.error_rate} > ${t.max_error_rate}`);\nif (Number(m.p95_latency_ms) > t.max_p95_latency_ms) breaches.push(`p95 latency ${m.p95_latency_ms} ms > ${t.max_p95_latency_ms} ms`);\nif (Number(m.est_cost_usd) > t.max_hourly_cost_usd) breaches.push(`hourly cost ${m.est_cost_usd} USD > ${t.max_hourly_cost_usd} USD`);\nreturn [{ json: { ...m, thresholds: t, breaches, alert: breaches.length > 0 } }];"
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000009",
+      "name": "Check Thresholds",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "a1", "leftValue": "={{ $json.alert }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000010",
+      "name": "Breach?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "ai-lab@example.test",
+        "toEmail": "ai-ops@example.test",
+        "subject": "=AI metrics alert: {{ $json.breaches.length }} threshold(s) breached",
+        "emailFormat": "text",
+        "text": "=Last hour:\nCalls: {{ $json.calls }}\nError rate: {{ $json.error_rate }}\np95 latency: {{ $json.p95_latency_ms }} ms\nTokens: {{ $json.total_tokens }}\nEstimated cost: {{ $json.est_cost_usd }} USD\nAvg feedback: {{ $json.avg_feedback }}\n\nBreaches:\n- {{ $json.breaches.join('\\n- ') }}",
+        "options": {}
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000011",
+      "name": "Send Metrics Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [620, 260]
+    },
+    {
+      "parameters": {},
+      "id": "0b1a0010-0000-4000-8000-000000000012",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lab.workflow_errors (workflow, execution_id, node, message) VALUES ($1, $2, $3, $4) RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [ ($json.workflow && $json.workflow.name) || 'unknown', String(($json.execution && $json.execution.id) || ''), ($json.execution && $json.execution.lastNodeExecuted) || '', String(($json.execution && $json.execution.error && $json.execution.error.message) || 'unknown error').slice(0, 1000) ] }}"
+        }
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000013",
+      "name": "Log Workflow Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-20, 600],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "ai-lab@example.test",
+        "toEmail": "ai-ops@example.test",
+        "subject": "=Workflow failed: {{ $('Error Trigger').first().json.workflow.name }}",
+        "emailFormat": "text",
+        "text": "=Workflow: {{ $('Error Trigger').first().json.workflow.name }}\nExecution: {{ $('Error Trigger').first().json.execution.id }}\nLast node: {{ $('Error Trigger').first().json.execution.lastNodeExecuted }}\nError: {{ $('Error Trigger').first().json.execution.error.message }}\nOpen: {{ $('Error Trigger').first().json.execution.url }}",
+        "options": {}
+      },
+      "id": "0b1a0010-0000-4000-8000-000000000014",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [200, 600]
+    }
+  ],
+  "connections": {
+    "Log Webhook": { "main": [[{ "node": "Pricing Config", "type": "main", "index": 0 }]] },
+    "Pricing Config": { "main": [[{ "node": "Normalise & Cost", "type": "main", "index": 0 }]] },
+    "Normalise & Cost": { "main": [[{ "node": "Insert LLM Call", "type": "main", "index": 0 }]] },
+    "Insert LLM Call": { "main": [[{ "node": "Respond Logged", "type": "main", "index": 0 }]] },
+    "Every Hour": { "main": [[{ "node": "Hourly Metrics", "type": "main", "index": 0 }]] },
+    "Hourly Metrics": { "main": [[{ "node": "Check Thresholds", "type": "main", "index": 0 }]] },
+    "Check Thresholds": { "main": [[{ "node": "Breach?", "type": "main", "index": 0 }]] },
+    "Breach?": { "main": [[{ "node": "Send Metrics Alert", "type": "main", "index": 0 }], []] },
+    "Error Trigger": { "main": [[{ "node": "Log Workflow Error", "type": "main", "index": 0 }]] },
+    "Log Workflow Error": { "main": [[{ "node": "Send Error Alert", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

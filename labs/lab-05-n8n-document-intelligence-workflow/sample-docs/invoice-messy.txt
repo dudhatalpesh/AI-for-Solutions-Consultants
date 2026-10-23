@@ -1,0 +1,8 @@
+fabrikam secur1ty (demo)   inv no. FAB/88-1   
+date 30th sept   
+for: northwind
+  - pen test (external)  ...... 4,000
+  - retest ..............   800
+TOTAL 5200 (eur?)  tax incl?
+pls pay to IBAN DE89370400440532013000 asap
+questions: j.smith@fabrikam-demo.example.test

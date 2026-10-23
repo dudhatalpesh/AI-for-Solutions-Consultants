@@ -1,0 +1,233 @@
+{
+  "name": "Lab 07 - Single Agent Tool Use (3 tools, memory, tool-call log, restricted tool)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Lab 07 - Single agent with tools\nChat in the editor, or `POST /webhook/lab07-agent {\"message\":\"...\",\"session_id\":\"demo-1\"}`.\n\nTools (all mock data):\n- **lookup_account** (read-only)\n- **check_service_status** (read-only)\n- **request_service_credit** (RESTRICTED: never executes; creates a pending request that needs human approval - see Lab 09, or enable n8n's built-in Human review on this tool)\n\nEvery tool call is logged to `lab.tool_call_log`.\n\nCredentials: **Ollama (local)**, **Postgres (lab)**.",
+        "height": 380,
+        "width": 440
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-700, -320]
+    },
+    {
+      "parameters": {
+        "public": false,
+        "options": {}
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000002",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [-200, 0],
+      "webhookId": "0b1a0006-0000-4000-8000-0000000000a1"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lab07-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000003",
+      "name": "Agent Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-200, 200],
+      "webhookId": "0b1a0006-0000-4000-8000-0000000000a2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "m1", "name": "chatInput", "value": "={{ String($json.body.message || '').slice(0, 2000) }}", "type": "string" },
+            { "id": "m2", "name": "sessionId", "value": "={{ $json.body.session_id || 'api-' + $execution.id }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000004",
+      "name": "Map Webhook Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are an account operations assistant for Northwind (demo, synthetic data).\n\nTools:\n- lookup_account: get plan, owner and open tickets for an account ID like ACME-001.\n- check_service_status: get current status of a service (vpn, email, crm, billing).\n- request_service_credit: RESTRICTED. Only creates a request that a human must approve. Use only when the user explicitly asks for a credit and gives an account ID, amount and reason.\n\nRules:\n1. Use tools for facts; never invent account data.\n2. If a tool returns NOT_FOUND, say so.\n3. Never claim a credit has been issued. Say it is pending human approval and give the request ID.\n4. Ask for missing required details instead of guessing.\n5. Keep answers under 120 words.",
+          "maxIterations": 6,
+          "returnIntermediateSteps": true
+        }
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000005",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [240, 80]
+    },
+    {
+      "parameters": {
+        "model": "llama3.2",
+        "options": { "temperature": 0.1 }
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000006",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [60, 400]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId }}",
+        "contextWindowLength": 8
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000007",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "name": "lookup_account",
+        "description": "Look up a customer account by ID (format: ABCDE-123). Input: the account ID only. Returns plan, owner team and open tickets, or NOT_FOUND.",
+        "language": "javaScript",
+        "jsCode": "// Mock CRM data (synthetic). Replace with an HTTP Request Tool or CRM node using a READ-ONLY credential.\nconst accounts = {\n  'ACME-001': { name: 'Acme Corp (demo)', plan: 'Enterprise', owner_team: 'Team Blue', open_tickets: 2, monthly_fee_usd: 12000 },\n  'GLOBEX-002': { name: 'Globex (demo)', plan: 'Business', owner_team: 'Team Green', open_tickets: 0, monthly_fee_usd: 3500 },\n  'INITECH-003': { name: 'Initech (demo)', plan: 'Starter', owner_team: 'Team Red', open_tickets: 5, monthly_fee_usd: 800 }\n};\nconst id = String(query || '').trim().toUpperCase().match(/[A-Z]+-\\d+/);\nif (!id || !accounts[id[0]]) return 'NOT_FOUND';\nreturn JSON.stringify({ account_id: id[0], ...accounts[id[0]] });"
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000008",
+      "name": "lookup_account",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [340, 400]
+    },
+    {
+      "parameters": {
+        "name": "check_service_status",
+        "description": "Get the current status of a Northwind service. Input: one of vpn, email, crm, billing. Returns status and any incident note.",
+        "language": "javaScript",
+        "jsCode": "// Mock status page (synthetic).\nconst status = {\n  vpn: { status: 'degraded', note: 'Intermittent disconnects in EU region since 08:10 UTC (INC-4471)' },\n  email: { status: 'operational', note: '' },\n  crm: { status: 'operational', note: '' },\n  billing: { status: 'maintenance', note: 'Planned maintenance 22:00-23:00 UTC' }\n};\nconst key = String(query || '').toLowerCase().trim();\nconst match = Object.keys(status).find(k => key.includes(k));\nif (!match) return 'NOT_FOUND. Valid services: ' + Object.keys(status).join(', ');\nreturn JSON.stringify({ service: match, ...status[match] });"
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000009",
+      "name": "check_service_status",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "name": "request_service_credit",
+        "description": "RESTRICTED. Create a service credit REQUEST that a human must approve. Input: account ID, amount in USD and reason in one sentence, e.g. 'ACME-001, 250, VPN outage on 3 March'. Does NOT issue the credit.",
+        "language": "javaScript",
+        "jsCode": "// Restricted tool: it never performs the action. It only records an approval request.\n// In Lab 09 the request is sent to the approval workflow (Wait node + email).\nconst text = String(query || '');\nconst acct = (text.toUpperCase().match(/[A-Z]+-\\d+/) || [null])[0];\nconst amount = Number((text.match(/\\d+(?:\\.\\d+)?/g) || []).find(n => !acct || !acct.includes(n)) || NaN);\nif (!acct || !(amount > 0)) return 'REJECTED: need an account ID and a positive amount.';\nif (amount > 5000) return 'REJECTED: amount exceeds the 5000 USD policy cap for agent-initiated requests.';\nconst id = 'REQ-' + Date.now().toString().slice(-6);\nreturn `PENDING_APPROVAL: request ${id} for ${amount} USD on ${acct} created. A human approver must approve it before anything happens.`;"
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000010",
+      "name": "request_service_credit",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [620, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn the agent's intermediate steps into a JSON array of tool calls for logging.\nconst out = $input.first().json;\nconst steps = out.intermediateSteps || [];\nconst calls = steps.map(s => ({\n  tool: s.action?.tool ?? 'unknown',\n  input: s.action?.toolInput ?? null,\n  output: String(s.observation ?? '').slice(0, 2000)\n}));\nlet sessionId = 'unknown';\ntry { sessionId = $('Map Webhook Input').first().json.sessionId; } catch (e) {}\ntry { sessionId = $('When chat message received').first().json.sessionId || sessionId; } catch (e) {}\nreturn [{ json: { answer: out.output, tool_calls: calls, tool_calls_json: JSON.stringify(calls), session_id: sessionId, execution_id: $execution.id } }];"
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000011",
+      "name": "Extract Tool Calls",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 80]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lab.tool_call_log (execution_id, session_id, tool_name, tool_input, tool_output)\nSELECT $1, $2, t->>'tool', t->'input', t->>'output'\nFROM jsonb_array_elements($3::jsonb) AS t;",
+        "options": {
+          "queryReplacement": "={{ [ $json.execution_id, $json.session_id, $json.tool_calls_json ] }}"
+        }
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000012",
+      "name": "Log Tool Calls",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [780, 80],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "w1",
+              "leftValue": "={{ $('Agent Webhook').isExecuted }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000013",
+      "name": "Came From Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1000, 80]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ answer: $('Extract Tool Calls').first().json.answer, tool_calls: $('Extract Tool Calls').first().json.tool_calls }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000014",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1220, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "r1", "name": "output", "value": "={{ $('Extract Tool Calls').first().json.answer }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0b1a0006-0000-4000-8000-000000000015",
+      "name": "Chat Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1220, 180]
+    }
+  ],
+  "connections": {
+    "When chat message received": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "Agent Webhook": { "main": [[{ "node": "Map Webhook Input", "type": "main", "index": 0 }]] },
+    "Map Webhook Input": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "Ollama Chat Model": { "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]] },
+    "Simple Memory": { "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]] },
+    "lookup_account": { "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]] },
+    "check_service_status": { "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]] },
+    "request_service_credit": { "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]] },
+    "AI Agent": { "main": [[{ "node": "Extract Tool Calls", "type": "main", "index": 0 }]] },
+    "Extract Tool Calls": { "main": [[{ "node": "Log Tool Calls", "type": "main", "index": 0 }]] },
+    "Log Tool Calls": { "main": [[{ "node": "Came From Webhook?", "type": "main", "index": 0 }]] },
+    "Came From Webhook?": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }],
+        [{ "node": "Chat Reply", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

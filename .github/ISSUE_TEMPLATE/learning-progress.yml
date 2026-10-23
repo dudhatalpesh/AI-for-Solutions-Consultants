@@ -1,0 +1,57 @@
+name: Learning progress
+description: Track your progress, notes and evidence for one module.
+title: "[Progress] Module NN - <name>"
+labels: ["learning-progress"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One issue per module. Never include real customer data, personal data or credentials.
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      options:
+        - 01 AI foundations
+        - 02 LLMs and prompting
+        - 03 Conversational AI
+        - 04 RAG and enterprise knowledge
+        - 05 AI workflows with n8n
+        - 06 Document intelligence
+        - 07 Single-agent systems
+        - 08 Multi-agent systems
+        - 09 AI architecture and deployment
+        - 10 AI observability and evaluation
+        - 11 AI security fundamentals
+        - 12 AI security red teaming
+        - 13 Governance, responsible AI and compliance
+        - 14 Capstone
+    validations:
+      required: true
+  - type: dropdown
+    id: path
+    attributes:
+      label: Learning path
+      options:
+        - 12-week standard
+        - 4-week accelerated
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Progress checklist
+      description: Paste the module's progress-checklist.md here and tick items as you go.
+      render: markdown
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Screenshots, eval results, exported workflow links (no credentials), artifacts produced.
+  - type: input
+    id: score
+    attributes:
+      label: Knowledge check score
+      placeholder: "e.g. 9/10"
+  - type: textarea
+    id: notes
+    attributes:
+      label: Reflections and open questions

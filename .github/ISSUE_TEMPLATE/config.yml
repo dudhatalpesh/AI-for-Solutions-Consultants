@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: n8n community forum
+    url: https://community.n8n.io/
+    about: General n8n questions not specific to these labs.

@@ -1,0 +1,17 @@
+CONTOSO NETWORK SERVICES LTD (synthetic demo vendor)
+INVOICE
+
+Invoice number: CNS-2026-0042
+Invoice date: 2026-09-30
+PO number: PO-77812
+Bill to: Northwind Logistics (demo), Accounts Payable
+
+Description                         Qty   Unit price   Amount
+SASE licence - standard tier        50    40.00        2000.00
+Managed firewall support (Sept)      1    500.00        500.00
+
+Subtotal: 2500.00
+Tax (20%): 500.00
+Total due: 3000.00 USD
+
+Payment terms: 30 days. Contact billing at billing@contoso-demo.example.test or +1 555 010 0199.

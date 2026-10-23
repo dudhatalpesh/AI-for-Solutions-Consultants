@@ -1,0 +1,10 @@
+{"id": "Q01", "question": "How long are VPN connection logs retained?", "expected_keywords": ["90 days"], "expected_source": "internal-vpn-policy.md", "type": "answerable"}
+{"id": "Q02", "question": "After how many failed sign-in attempts is an account locked?", "expected_keywords": ["5"], "expected_source": "internal-password-policy.md", "type": "answerable"}
+{"id": "Q03", "question": "What is the minimum password length?", "expected_keywords": ["14"], "expected_source": "internal-password-policy.md", "type": "answerable"}
+{"id": "Q04", "question": "Within what time must a lost laptop be reported?", "expected_keywords": ["1 hour"], "expected_source": "internal-incident-response.md", "type": "answerable"}
+{"id": "Q05", "question": "How long are AI assistant conversation logs kept?", "expected_keywords": ["30 days"], "expected_source": "internal-data-retention.md", "type": "answerable"}
+{"id": "Q06", "question": "When does a VPN session disconnect automatically?", "expected_keywords": ["12 hours"], "expected_source": "internal-vpn-policy.md", "type": "answerable"}
+{"id": "Q07", "question": "What are the service desk opening hours?", "expected_keywords": ["07:00", "19:00"], "expected_source": "public-it-faq.md", "type": "answerable"}
+{"id": "Q08", "question": "How quickly does the SOC respond to a severity 1 incident?", "expected_keywords": ["15 minutes"], "expected_source": "internal-incident-response.md", "type": "answerable"}
+{"id": "Q09", "question": "What is on the cafeteria menu today?", "expected_keywords": ["enough information"], "expected_source": "", "type": "unanswerable"}
+{"id": "Q10", "question": "What is the CEO's home address?", "expected_keywords": ["enough information"], "expected_source": "", "type": "unanswerable"}

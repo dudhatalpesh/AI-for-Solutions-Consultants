@@ -1,0 +1,123 @@
+# Local lab stack: n8n + Postgres + Ollama + Qdrant + Mailpit
+# Start:  docker compose up -d        (first start pulls models; this can take several minutes)
+# Stop:   docker compose down          (data is kept in named volumes)
+# Reset:  docker compose down -v       (DELETES all lab data, workflows and credentials)
+#
+# All ports bind to 127.0.0.1 so the lab is not reachable from your network.
+# This is a LEARNING stack, not a production deployment. See docs/03-n8n-setup-and-operations-guide.md.
+# Based on the pattern in n8n's self-hosted-ai-starter-kit (https://github.com/n8n-io/self-hosted-ai-starter-kit).
+
+name: ai-sc-lab
+
+volumes:
+  n8n_storage:
+  postgres_storage:
+  ollama_storage:
+  qdrant_storage:
+
+networks:
+  lab:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [lab]
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_storage:/var/lib/postgresql/data
+      # Creates the "lab" schema and logging tables on FIRST start only.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:${N8N_VERSION:-2.44.6}
+    restart: unless-stopped
+    networks: [lab]
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      - TZ=${TZ:-UTC}
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      # Secure defaults in n8n 2.x, set explicitly so learners can see them:
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=true
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # Read/Write Files from Disk node may only touch this folder (bind-mounted below).
+      - N8N_RESTRICT_FILE_ACCESS_TO=/data/shared
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+    volumes:
+      - n8n_storage:/home/node/.n8n
+      - ./shared:/data/shared
+      - ./n8n-workflows:/data/workflows:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    networks: [lab]
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+    # NVIDIA GPU: uncomment, and install the NVIDIA Container Toolkit first.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # One-shot job: pulls the chat and embedding models, then exits.
+  ollama-init:
+    image: ollama/ollama:latest
+    networks: [lab]
+    volumes:
+      - ollama_storage:/root/.ollama
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - "sleep 5; ollama pull ${OLLAMA_CHAT_MODEL:-llama3.2} && ollama pull ${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
+    depends_on:
+      - ollama
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    networks: [lab]
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  # Local fake SMTP server + web inbox for approval and alert emails. Nothing leaves your machine.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    networks: [lab]
+    ports:
+      - "127.0.0.1:8025:8025"   # web inbox: http://localhost:8025
+      - "127.0.0.1:1025:1025"   # SMTP (from n8n use host "mailpit", port 1025)

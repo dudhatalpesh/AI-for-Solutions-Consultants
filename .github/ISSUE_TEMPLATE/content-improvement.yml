@@ -1,0 +1,47 @@
+name: Content improvement
+description: Suggest new content, a correction, or a clarity improvement.
+title: "[Content] <area>: <short description>"
+labels: ["content"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: File(s) or section
+      placeholder: "e.g. modules/04-rag-and-enterprise-knowledge/concepts.md"
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - Factual correction (outdated or wrong)
+        - Missing content / stub to complete
+        - Clarity or structure
+        - New diagram
+        - New customer conversation material
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources verified
+      description: Link the current official docs you checked. We do not accept unverified API, node, version or pricing claims.
+    validations:
+      required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Content rules
+      options:
+        - label: Acronyms expanded on first use; plain English
+        - label: Tools labelled (Open source / Freemium / Local / Cloud / Optional / Beginner-friendly / Advanced)
+        - label: No real customer data, personal data or secrets
+          required: true
